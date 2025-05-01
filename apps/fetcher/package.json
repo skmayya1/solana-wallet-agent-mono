@@ -13,7 +13,8 @@
   "type": "commonjs",
   "dependencies": {
     "dotenv": "^16.5.0",
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "node-cron": "^3.0.3"
   },
   "devDependencies": {
     "@repo/eslint-config": "workspace:*",
