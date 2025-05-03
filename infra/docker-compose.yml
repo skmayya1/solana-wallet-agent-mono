@@ -1,0 +1,13 @@
+services:
+  microservice:
+    build: 
+      context: ../ 
+      dockerfile: ./infra/microservice/Dockerfile 
+    depends_on:
+      - redis
+    ports:
+      - "4000:4000"
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
