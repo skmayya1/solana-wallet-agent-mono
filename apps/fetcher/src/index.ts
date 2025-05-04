@@ -70,8 +70,9 @@ cron.schedule('0 */5 * * *', async () => {
 });
 
 if(ISPRODUCTION){
-  updateTokenCache()
+  setTimeout(updateTokenCache, 100000);
 }
+
 
 app.get('/health', (_req, res) => {
   res.json({ message: 'OK' ,

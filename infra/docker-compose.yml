@@ -17,3 +17,4 @@ services:
       - redis-data:/data  
 volumes:
   redis-data:
+    t
