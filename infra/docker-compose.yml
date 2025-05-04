@@ -14,8 +14,6 @@ services:
     ports:
       - "6390:6379"  
     volumes:
-      - ./infra/config/redis.conf:/usr/local/etc/redis/redis.conf  # Mount the custom redis.conf
-    command: redis-server /usr/local/etc/redis/redis.conf  # Use the custom config file
-
+      - redis-data:/data  
 volumes:
   redis-data:
