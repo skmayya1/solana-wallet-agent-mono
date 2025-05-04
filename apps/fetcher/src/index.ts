@@ -3,6 +3,9 @@ import cron from 'node-cron';
 import dotenv from "dotenv"
 import redis from './redis';
 import { getTokenDetails } from './getTokenDetails';
+import {parser} from 'stream-json';
+import {streamArray} from 'stream-json/streamers/StreamArray';
+import {chain} from 'stream-chain';
 
 export interface TokenRequest {
   tickers: string[];
@@ -19,33 +22,47 @@ const REDIS_CACHE_KEY = process.env.REDIS_CACHEKEY || 'jupiter_tokens_cache';
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-
 const fetchTokensWithRetry = async (maxRetries: number = 3): Promise<Token[]> => {
   let attempt = 0;
+  
   while (attempt < maxRetries) {
     try {
       const res = await fetch('https://lite-api.jup.ag/tokens/v1/all');
-      const tokens = await res.json();
       
-      if (tokens.length === 0) {
+      if (!res.body) return [];
+      
+      // Set up streaming pipeline for processing the token data incrementally
+      const pipeline = chain([
+        res.body,          // The readable stream (HTTP response body)
+        parser(),          // Parse the incoming JSON stream
+        streamArray()      // Process the JSON array chunks
+      ]);
+
+      const tokens: Token[] = [];
+      
+      // Iterate through the stream chunks (tokens)
+      for await (const {value} of pipeline) {
+        tokens.push(value);  // Push each token to the array
+      }
+
+      // If tokens are fetched successfully, return them
+      if (tokens.length > 0) {
+        return tokens;
+      } else {
         console.log('Received empty tokens, retrying...');
         attempt++;
-        await delay(5000); 
-      } else {
-        return tokens;
+        await delay(5000);  // Wait before retrying
       }
     } catch (error) {
       console.error('Error fetching tokens:', error);
       attempt++;
-      await delay(5000);
+      await delay(5000);  // Wait before retrying
     }
   }
 
-
-
+  // If retries exhausted, throw an error
   throw new Error('Failed to fetch tokens after retries');
 };
-
 
 const updateTokenCache = async () => {
   console.log("Fetching Tokens data...");
@@ -63,16 +80,13 @@ const updateTokenCache = async () => {
   }
 };
 
+setTimeout(updateTokenCache, 100000);
+
 cron.schedule('0 */5 * * *', async () => {
   console.log('Running scheduled task every 5 hours...');
   console.log("Fetching Tokens data...");
   await updateTokenCache()
 });
-
-if(ISPRODUCTION){
-  setTimeout(updateTokenCache, 100000);
-}
-
 
 app.get('/health', (_req, res) => {
   res.json({ message: 'OK' ,
