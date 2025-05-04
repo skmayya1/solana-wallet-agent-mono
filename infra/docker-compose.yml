@@ -3,6 +3,8 @@ services:
     build: 
       context: ../ 
       dockerfile: ./infra/microservice/Dockerfile 
+    environment:
+      - ENVIRONMENT=PRODUCTION
     depends_on:
       - redis
     ports:
@@ -10,4 +12,10 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "6390:6379"  
+    volumes:
+      - ./infra/config/redis.conf:/usr/local/etc/redis/redis.conf  # Mount the custom redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf  # Use the custom config file
+
+volumes:
+  redis-data:

@@ -28,7 +28,6 @@ export const getTokenDetails = async (queries: TokenRequest): Promise<Token[]> =
       results.push(...addressMatches);
     }
     
-    // Remove duplicates (in case a token matched both by ticker and address)
     const uniqueResults = results.filter((token, index, self) =>
       index === self.findIndex(t => t.address === token.address)
     );

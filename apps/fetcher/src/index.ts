@@ -9,13 +9,13 @@ export interface TokenRequest {
   addresses: string[];
 }
 
-
 dotenv.config()
 
 const app = express();
 const PORT = process.env.PORT || 4000;
-
+const ISPRODUCTION = process.env.ENVIRONMENT == 'PRODUCTION' || false
 const REDIS_CACHE_KEY = process.env.REDIS_CACHEKEY || 'jupiter_tokens_cache';
+
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -41,13 +41,14 @@ const fetchTokensWithRetry = async (maxRetries: number = 3): Promise<Token[]> =>
     }
   }
 
+
+
   throw new Error('Failed to fetch tokens after retries');
 };
 
-cron.schedule('0 */5 * * *', async () => {
-  console.log('Running scheduled task every 5 hours...');
-  console.log("Fetching Tokens data...");
 
+const updateTokenCache = async () => {
+  console.log("Fetching Tokens data...");
   try {
     const tokens = await fetchTokensWithRetry(); 
     if (tokens.length === 0) {
@@ -57,22 +58,33 @@ cron.schedule('0 */5 * * *', async () => {
     await redis.del(REDIS_CACHE_KEY);
     await redis.set(REDIS_CACHE_KEY, JSON.stringify(tokens));
     console.log("Tokens data updated in cache successfully.");
-
   } catch (error) {
     console.error("Failed to fetch tokens:", error);
   }
+};
+
+cron.schedule('0 */5 * * *', async () => {
+  console.log('Running scheduled task every 5 hours...');
+  console.log("Fetching Tokens data...");
+  await updateTokenCache()
 });
+
+if(ISPRODUCTION){
+  updateTokenCache()
+}
 
 app.get('/health', (_req, res) => {
-  res.json({ message: 'OK' });
+  res.json({ message: 'OK' ,
+    redis_connected:redis.status
+  });
 });
 
-app.get('/token',async (req,res)=>{
+app.get('/token', async (req, res) => {
   const queries: TokenRequest = {
-    tickers: Array.isArray(req.query.tickers) 
+    tickers: Array.isArray(req.query.tickers)
       ? req.query.tickers.map(String)
       : req.query.tickers ? [String(req.query.tickers)] : [],
-    
+
     addresses: Array.isArray(req.query.addresses)
       ? req.query.addresses.map(String)
       : req.query.addresses ? [String(req.query.addresses)] : [],
@@ -80,18 +92,18 @@ app.get('/token',async (req,res)=>{
 
   const isNotValid = queries.addresses.length === 0 && queries.tickers.length === 0;
 
-  if(isNotValid) res.status(400).json({
-    message:"Both cannot be empty!"
-  })
+  if (isNotValid) {
+     res.status(400).json({ message: "Both cannot be empty!" });
+  }
 
-  const TokenDetails = await getTokenDetails(queries) ;
+  const TokenDetails = await getTokenDetails(queries);
 
-  if(TokenDetails.length === 0) res.status(500).json({
-    message:"Something went wrong!"
-  })
-  
-  res.json(TokenDetails)
-})
+  if (TokenDetails.length === 0) {
+     res.status(500).json({ message: "Something went wrong!" });
+  }
+
+   res.json(TokenDetails);
+});
 
 
 app.listen(PORT, () => {
