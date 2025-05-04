@@ -12,7 +12,7 @@ export interface TokenRequest {
 dotenv.config()
 
 const app = express();
-const PORT = process.env.PORT || 4000;
+const PORT = Number(process.env.PORT)  || 4000;
 const ISPRODUCTION = process.env.ENVIRONMENT == 'PRODUCTION' || false
 const REDIS_CACHE_KEY = process.env.REDIS_CACHEKEY || 'jupiter_tokens_cache';
 
@@ -107,9 +107,10 @@ app.get('/token', async (req, res) => {
 });
 
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`API running on port ${PORT}`);
 });
+
 
 interface TokenResponse {
   message:string;
