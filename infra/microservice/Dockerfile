@@ -10,7 +10,9 @@ RUN pnpm install
 
 WORKDIR /app/apps/fetcher
 
-RUN pnpm --filter fetcher run build
+RUN pnpm install
+
+RUN pnpm run build
 
 FROM node:18-alpine AS runtime
 

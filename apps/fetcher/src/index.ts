@@ -1,96 +1,192 @@
 import express from 'express';
 import cron from 'node-cron';
-import dotenv from "dotenv"
+import dotenv from "dotenv";
 import redis from './redis';
 import { getTokenDetails } from './getTokenDetails';
-import {parser} from 'stream-json';
-import {streamArray} from 'stream-json/streamers/StreamArray';
-import {chain} from 'stream-chain';
+import status from 'express-status-monitor';
+import axios from 'axios';
+import { parser } from 'stream-json';
+import { streamArray } from 'stream-json/streamers/StreamArray';
+import { chain } from 'stream-chain';
 
 export interface TokenRequest {
   tickers: string[];
   addresses: string[];
 }
 
-dotenv.config()
+dotenv.config();
 
 const app = express();
-const PORT = Number(process.env.PORT)  || 4000;
-const ISPRODUCTION = process.env.ENVIRONMENT == 'PRODUCTION' || false
-const REDIS_CACHE_KEY = process.env.REDIS_CACHEKEY || 'jupiter_tokens_cache';
+app.use(status());
 
+const PORT = Number(process.env.PORT) || 4000;
+const ISPRODUCTION = process.env.ENVIRONMENT == 'PRODUCTION' || false;
+const REDIS_CACHE_KEY = process.env.REDIS_CACHEKEY || 'jupiter_tokens_cache';
+const REDIS_INDEX_KEY = `${REDIS_CACHE_KEY}:index`;
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-const fetchTokensWithRetry = async (maxRetries: number = 3): Promise<Token[]> => {
+/**
+ * Streams tokens directly to Redis as they are processed
+ * to minimize memory usage
+ */
+const streamTokensToRedis = async (maxRetries: number = 3): Promise<number> => {
   let attempt = 0;
-  
+  let tokenCount = 0;
+
+  // Create token index map in memory - much smaller than full token data
+  const tokenIndex = new Map();
+
   while (attempt < maxRetries) {
     try {
-      const res = await fetch('https://lite-api.jup.ag/tokens/v1/all');
-      
-      if (!res.body) return [];
-      
-      // Set up streaming pipeline for processing the token data incrementally
-      const pipeline = chain([
-        res.body,          // The readable stream (HTTP response body)
-        parser(),          // Parse the incoming JSON stream
-        streamArray()      // Process the JSON array chunks
-      ]);
+      console.log(`Attempt ${attempt + 1} to fetch and stream tokens...`);
+      tokenCount = 0;
 
-      const tokens: Token[] = [];
-      
-      // Iterate through the stream chunks (tokens)
-      for await (const {value} of pipeline) {
-        tokens.push(value);  // Push each token to the array
+      // First clear existing data
+      await redis.del(REDIS_INDEX_KEY);
+      const keys = await redis.keys(`${REDIS_CACHE_KEY}:token:*`);
+      if (keys.length > 0) {
+        await redis.del(keys);
       }
 
-      // If tokens are fetched successfully, return them
-      if (tokens.length > 0) {
-        return tokens;
-      } else {
+      // Create a response with streaming
+      const response = await axios.get('https://lite-api.jup.ag/tokens/v1/all', {
+        headers: {
+          'Accept-Encoding': 'gzip, deflate, br'
+        },
+        responseType: 'stream'
+      });
+
+      // Set up the streaming pipeline
+      await new Promise<void>((resolve, reject) => {
+        const pipeline = chain([
+          response.data,
+          parser(),
+          streamArray()
+        ]);
+
+        pipeline.on('data', async ({ value }) => {
+          try {
+            // Store each token individually with minimal processing
+            const token = value as Token;
+            tokenCount++;
+
+            // Only store what we need for quick lookups - address and symbol
+            if (token.address && token.symbol) {
+              tokenIndex.set(token.symbol.toUpperCase(), token.address);
+
+              // Store token by address for direct lookups
+              await redis.set(`${REDIS_CACHE_KEY}:token:${token.address}`, JSON.stringify(token));
+
+              // Log progress periodically
+              if (tokenCount % 100 === 0) {
+                console.log(`Processed ${tokenCount} tokens so far...`);
+              }
+            }
+          } catch (err) {
+            console.error('Error processing token:', err);
+          }
+        });
+
+        pipeline.on('error', (err) => {
+          console.error('Pipeline error:', err);
+          reject(err);
+        });
+
+        pipeline.on('end', async () => {
+          try {
+            // Store the index for symbol -> address lookups
+            const indexObj = Object.fromEntries(tokenIndex);
+            await redis.set(REDIS_INDEX_KEY, JSON.stringify(indexObj));
+
+            console.log(`Stream complete. Processed ${tokenCount} tokens.`);
+            resolve();
+          } catch (err) {
+            console.error('Error finalizing token processing:', err);
+            reject(err);
+          }
+        });
+      });
+
+      if (tokenCount === 0) {
         console.log('Received empty tokens, retrying...');
         attempt++;
-        await delay(5000);  // Wait before retrying
+        await delay(5000);
+      } else {
+        console.log(`Successfully processed ${tokenCount} tokens`);
+        return tokenCount;
       }
     } catch (error) {
       console.error('Error fetching tokens:', error);
       attempt++;
-      await delay(5000);  // Wait before retrying
+      await delay(5000);
     }
   }
-
-  // If retries exhausted, throw an error
   throw new Error('Failed to fetch tokens after retries');
 };
 
+/**
+ * Updates the token cache through direct streaming to Redis
+ */
 const updateTokenCache = async () => {
-  console.log("Fetching Tokens data...");
+  console.log("Starting token cache update...");
   try {
-    const tokens = await fetchTokensWithRetry(); 
-    if (tokens.length === 0) {
-      console.log("No tokens found, skipping cache update.");
-      return;
-    }
-    await redis.del(REDIS_CACHE_KEY);
-    await redis.set(REDIS_CACHE_KEY, JSON.stringify(tokens));
-    console.log("Tokens data updated in cache successfully.");
+    const tokenCount = await streamTokensToRedis();
+    console.log(`Token cache updated successfully. Processed ${tokenCount} tokens.`);
+
+    // Store metadata
+    await redis.set(`${REDIS_CACHE_KEY}:meta`, JSON.stringify({
+      totalTokens: tokenCount,
+      updatedAt: new Date().toISOString()
+    }));
   } catch (error) {
-    console.error("Failed to fetch tokens:", error);
+    console.error("Failed to update token cache:", error);
   }
 };
 
-setTimeout(updateTokenCache, 100000);
+// Initial cache update
+updateTokenCache();
 
+// Schedule regular updates
 cron.schedule('0 */5 * * *', async () => {
   console.log('Running scheduled task every 5 hours...');
-  console.log("Fetching Tokens data...");
-  await updateTokenCache()
+  await updateTokenCache();
 });
 
+/**
+ * Get token details by address or symbol
+ * @param address Token address
+ * @param symbol Token symbol (alternative to address)
+ */
+export async function getTokenByAddressOrSymbol(address?: string, symbol?: string): Promise<Token | null> {
+  try {
+    if (address) {
+      // Direct lookup by address
+      const tokenData = await redis.get(`${REDIS_CACHE_KEY}:token:${address}`);
+      return tokenData ? JSON.parse(tokenData) : null;
+    } else if (symbol) {
+      const indexData = await redis.get(REDIS_INDEX_KEY);
+      if (indexData) {
+        const index = JSON.parse(indexData);
+        const tokenAddress = index[symbol.toUpperCase()];
+
+        if (tokenAddress) {
+          const tokenData = await redis.get(`${REDIS_CACHE_KEY}:token:${tokenAddress}`);
+          return tokenData ? JSON.parse(tokenData) : null;
+        }
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error("Error getting token:", error);
+    return null;
+  }
+}
+
 app.get('/health', (_req, res) => {
-  res.json({ message: 'OK' ,
-    redis_connected:redis.status
+  res.json({
+    message: 'OK',
+    redis_connected: redis.status
   });
 });
 
@@ -108,110 +204,39 @@ app.get('/token', async (req, res) => {
   const isNotValid = queries.addresses.length === 0 && queries.tickers.length === 0;
 
   if (isNotValid) {
-     res.status(400).json({ message: "Both cannot be empty!" });
+    res.status(400).json({ message: "Both cannot be empty!" });
   }
 
   const TokenDetails = await getTokenDetails(queries);
 
   if (TokenDetails.length === 0) {
-     res.status(500).json({ message: "Something went wrong!" });
+    res.status(500).json({ message: "Something went wrong!" });
   }
 
-   res.json(TokenDetails);
+  res.json(TokenDetails);
 });
-
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`API running on port ${PORT}`);
 });
 
-
 interface TokenResponse {
-  message:string;
+  message: string;
   tokenInfo: {
-      inputMint:string,
-      outputMint:string,
-      InputTokenDecimal:number ;
-      outputTokenDecimal:number;
-      Input?:string;
-      output?:string;
+    inputMint: string,
+    outputMint: string,
+    InputTokenDecimal: number;
+    outputTokenDecimal: number;
+    Input?: string;
+    output?: string;
   }
-  error:string | null
-} 
-
-
-
-// import fetch from 'node-fetch';
-// import {redis} from './redis'
-
-// const REDIS_CACHE_KEY = 'jupiter_tokens_cache';
-// const HOUR = 600 * 60; 
+  error: string | null
+}
 
 type Token = {
   symbol: string;
   name: string;
   address: string;
   logoURI: string;
-  decimals:number;
+  decimals: number;
 };
-
-// export async function getCachedJupiterTokens(): Promise<Token[]> {
-//   const cachedData = await redis.get(REDIS_CACHE_KEY);
-//   if (cachedData) {
-//     return JSON.parse(cachedData);
-//   }
-  // console.log("Fetching Tokens data..");
-  
-  // const res = await fetch('https://lite-api.jup.ag/tokens/v1/all');
-  // const tokens = (await res.json()) as Token[];
-
-  // await redis.set(REDIS_CACHE_KEY, JSON.stringify(tokens));
-
-//   return tokens;
-// }
-
-
-
-// export const GetTokenInfo = async (GeminiResponse: GeminiResponse):Promise<TokenResponse> => {
-//   const tokens = await getCachedJupiterTokens()
-
-//   console.log(GeminiResponse.tickers[0]);
-//   const mintAddresses: string[] = [];
-//   const mintDecimals:number[] =[];
-//   const mintName: string[] = [];
-
-//   if (GeminiResponse.tickers.length === 2 && 
-//       GeminiResponse.tickers[0] !== '' && GeminiResponse.tickers[1] !== '') {
-  
-//       for (let i = 0; i < GeminiResponse.tickers.length; i++) {
-//           const ticker = GeminiResponse.tickers[i];
-  
-//           const token = tokens.find((t: any) => t.symbol.toUpperCase() === ticker.toUpperCase());
-          
-//           if (!token) {
-//               throw new Error(`Token ${ticker} not found on Jupiter`);
-//           }
-//           const mint = token.address;
-//           mintAddresses.push(mint); 
-//           const decimal = token.decimals
-//           mintDecimals.push(decimal)
-//           const symbol = token.symbol
-//           mintName.push(symbol)
-//           console.log(`Mint address for ${ticker}:`, mint);
-//       }
-//       console.log('Both mint addresses:', mintAddresses);
-//   }
-//   return {
-//       message: "Correct Contract Addresses",
-//       tokenInfo: {
-//           inputMint:mintAddresses[0],
-//           outputMint:mintAddresses[1],
-//           InputTokenDecimal:mintDecimals[0],
-//           outputTokenDecimal:mintDecimals[1],
-//           Input:mintName[0],
-//           output:mintName[1]
-//       },
-//       error: null
-//   }}
-
-  
