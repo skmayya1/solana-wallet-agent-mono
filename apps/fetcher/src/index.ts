@@ -28,7 +28,7 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
  * Streams tokens directly to Redis as they are processed
- * to minimize memory usage
+ * to minimize memory usage, storing only essential fields
  */
 const streamTokensToRedis = async (maxRetries: number = 3): Promise<number> => {
   let attempt = 0;
@@ -67,21 +67,24 @@ const streamTokensToRedis = async (maxRetries: number = 3): Promise<number> => {
 
         pipeline.on('data', async ({ value }) => {
           try {
-            // Store each token individually with minimal processing
             const token = value as Token;
             tokenCount++;
 
-            // Only store what we need for quick lookups - address and symbol
+            // Only store what we need for quick lookups
             if (token.address && token.symbol) {
               tokenIndex.set(token.symbol.toUpperCase(), token.address);
 
-              // Store token by address for direct lookups
-              await redis.set(`${REDIS_CACHE_KEY}:token:${token.address}`, JSON.stringify(token));
+              // Store only the specific fields requested
+              const essentialTokenData = {
+                symbol: token.symbol,
+                name: token.name,
+                address: token.address,
+                logoURI: token.logoURI,
+                decimals: token.decimals
+              };
 
-              // Log progress periodically
-              if (tokenCount % 100 === 0) {
-                console.log(`Processed ${tokenCount} tokens so far...`);
-              }
+              // Store token by address for direct lookups
+              await redis.set(`${REDIS_CACHE_KEY}:token:${token.address}`, JSON.stringify(essentialTokenData));
             }
           } catch (err) {
             console.error('Error processing token:', err);
@@ -204,13 +207,13 @@ app.get('/token', async (req, res) => {
   const isNotValid = queries.addresses.length === 0 && queries.tickers.length === 0;
 
   if (isNotValid) {
-    res.status(400).json({ message: "Both cannot be empty!" });
+     res.status(400).json({ message: "Both cannot be empty!" });
   }
 
   const TokenDetails = await getTokenDetails(queries);
 
   if (TokenDetails.length === 0) {
-    res.status(500).json({ message: "Something went wrong!" });
+     res.status(500).json({ message: "Something went wrong!" });
   }
 
   res.json(TokenDetails);
