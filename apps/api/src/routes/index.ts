@@ -6,7 +6,7 @@ router.get('/', (_req,res) => {
     res.json({ message: 'OK' });
 });
 
-router.get('/ping', (_req, res) => {
+router.get('/health', (_req, res) => {
     res.json({ message: 'pong' });
   });
   

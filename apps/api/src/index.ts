@@ -5,11 +5,8 @@ const app = express();
 const PORT = process.env.PORT || 8080;
 
 app.use(express.json());
-app.use('/api', router);
 
-app.get('/health', (_req, res) => {
-    res.json({ message: 'OK' });
-});
+app.use('/api', router);
 
 app.listen(PORT, () => {
     console.log(`API running on port ${PORT}`);

@@ -2,7 +2,7 @@
   "extends": "@repo/typescript-config/base.json",
   "compilerOptions": {
     "baseUrl": ".",
-    "outDir": "./dist"  // Specify the output directory for compiled JS
+    "outDir": "./dist" 
   },
   "include": ["src"]
 }

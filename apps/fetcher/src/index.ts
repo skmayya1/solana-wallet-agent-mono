@@ -25,16 +25,9 @@ const REDIS_CACHE_KEY = process.env.REDIS_CACHEKEY || 'jupiter_tokens_cache';
 const REDIS_INDEX_KEY = `${REDIS_CACHE_KEY}:index`;
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-/**
- * Streams tokens directly to Redis as they are processed
- * to minimize memory usage, storing only essential fields
- */
 const streamTokensToRedis = async (maxRetries: number = 3): Promise<number> => {
   let attempt = 0;
   let tokenCount = 0;
-
-  // Create token index map in memory - much smaller than full token data
   const tokenIndex = new Map();
 
   while (attempt < maxRetries) {
@@ -42,14 +35,12 @@ const streamTokensToRedis = async (maxRetries: number = 3): Promise<number> => {
       console.log(`Attempt ${attempt + 1} to fetch and stream tokens...`);
       tokenCount = 0;
 
-      // First clear existing data
       await redis.del(REDIS_INDEX_KEY);
       const keys = await redis.keys(`${REDIS_CACHE_KEY}:token:*`);
       if (keys.length > 0) {
         await redis.del(keys);
       }
 
-      // Create a response with streaming
       const response = await axios.get('https://lite-api.jup.ag/tokens/v1/all', {
         headers: {
           'Accept-Encoding': 'gzip, deflate, br'
@@ -57,7 +48,6 @@ const streamTokensToRedis = async (maxRetries: number = 3): Promise<number> => {
         responseType: 'stream'
       });
 
-      // Set up the streaming pipeline
       await new Promise<void>((resolve, reject) => {
         const pipeline = chain([
           response.data,
@@ -69,12 +59,9 @@ const streamTokensToRedis = async (maxRetries: number = 3): Promise<number> => {
           try {
             const token = value as Token;
             tokenCount++;
-
-            // Only store what we need for quick lookups
             if (token.address && token.symbol) {
               tokenIndex.set(token.symbol.toUpperCase(), token.address);
 
-              // Store only the specific fields requested
               const essentialTokenData = {
                 symbol: token.symbol,
                 name: token.name,
@@ -83,7 +70,6 @@ const streamTokensToRedis = async (maxRetries: number = 3): Promise<number> => {
                 decimals: token.decimals
               };
 
-              // Store token by address for direct lookups
               await redis.set(`${REDIS_CACHE_KEY}:token:${token.address}`, JSON.stringify(essentialTokenData));
             }
           } catch (err) {
