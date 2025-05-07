@@ -1,13 +1,14 @@
 import {  Router } from 'express';
+import PromptRouter from './prompt'
+import { Health } from '../agent';
 
 const router: Router = Router();
 
-router.get('/', (_req,res) => {
-    res.json({ message: 'OK' });
-});
+router.use('/prompt',PromptRouter)
 
-router.get('/health', (_req, res) => {
-    res.json({ message: 'pong' });
+router.get('/health', async (_req, res) => {
+    const llm = await Health() 
+    res.json({ llm , message: 'pong' });
   });
   
 export default router;
