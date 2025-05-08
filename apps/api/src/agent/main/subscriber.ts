@@ -1,8 +1,7 @@
 import Redis from "ioredis";
-import { llmResponse } from ".";
+import { llmResponse } from "../types";
 
 const redis = new Redis()
-
 
 export function actionEventListners () {
     redis.subscribe('event:action', (err, count) => {
@@ -14,6 +13,10 @@ export function actionEventListners () {
     });
     redis.on('message', async (channel, message) => {
         console.log(`Now listening to ${channel}`);
-        console.log(JSON.stringify(message));
+
+        const { action , prompt }:llmResponse = JSON.parse(message)
+        
+
     });
+
 }

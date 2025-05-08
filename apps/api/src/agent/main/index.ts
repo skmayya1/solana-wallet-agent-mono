@@ -1,15 +1,12 @@
 import { SystemMessage, HumanMessage } from "@langchain/core/messages";
-import { llm } from "../agent";
-import { mainAgentSystemPrompt } from "./utils/prompts";
-import redis from "../redis";
+import { llm } from "../../agent";
+import { mainAgentSystemPrompt } from "../utils/prompts";
+import redis from "../../redis";
+import { llmResponse } from "../types";
 
 interface Event {
     socketId: string | null
     prompt: string
-}
-
-export interface llmResponse {
-    action: "transfer" | "swap" | "balance" | "history" | "error"
 }
 
 export async function mainAgent({
@@ -23,8 +20,11 @@ export async function mainAgent({
     const response = await llm.invoke(llmConfig);
     const cleanedText = response.text.replace(/```json|```/g, "").trim();
 
-    await redis.publish("event:action",JSON.parse(cleanedText))
-
-    return JSON.parse(cleanedText) as llmResponse
+    const data = {
+        action:JSON.stringify(cleanedText),
+        prompt
+    }
+    await redis.publish("event:action",JSON.stringify(data))
+    return JSON.parse(cleanedText) 
 }
 
