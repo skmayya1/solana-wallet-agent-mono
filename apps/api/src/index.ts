@@ -6,7 +6,7 @@ import { SocketService } from './socket';
 
 const app = express();
 const server = http.createServer(app); 
-const socketService = new SocketService(server);
+export const socketService = new SocketService(server);
 
 const PORT = process.env.PORT || 5000;
 

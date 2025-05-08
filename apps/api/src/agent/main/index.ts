@@ -24,7 +24,9 @@ export async function mainAgent({
         action:JSON.stringify(cleanedText),
         prompt
     }
-    await redis.publish("event:action",JSON.stringify(data))
+    const channel = data.action || "error"
+    
+    await redis.publish(channel,JSON.stringify(data))
     return JSON.parse(cleanedText) 
 }
 
