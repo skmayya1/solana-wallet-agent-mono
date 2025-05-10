@@ -19,7 +19,7 @@ dotenv.config();
 const app = express();
 app.use(status());
 
-const PORT = Number(process.env.PORT) || 4000;
+const PORT = Number(process.env.PORT) || 8000;
 const ISPRODUCTION = process.env.ENVIRONMENT == 'PRODUCTION' || false;
 const REDIS_CACHE_KEY = process.env.REDIS_CACHEKEY || 'jupiter_tokens_cache';
 const REDIS_INDEX_KEY = `${REDIS_CACHE_KEY}:index`;
@@ -134,7 +134,7 @@ const updateTokenCache = async () => {
 };
 
 // Initial cache update
-updateTokenCache();
+// updateTokenCache();
 
 // Schedule regular updates
 cron.schedule('0 */5 * * *', async () => {
