@@ -1,4 +1,4 @@
-import { socketService } from "src"
+import { socketService } from "../..//index"
 
 export const handleError = ()=>{
     const message = 'Out of box MF'

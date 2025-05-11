@@ -4,7 +4,7 @@ import { handleError } from "../utils/error-handler";
 
 const redis = new Redis()
 
-export function actionEventListners() {
+export function errorEventListners() {
     redis.subscribe('error', (err, count) => {
         if (err) {
             console.error('Failed to subscribe:', err);

@@ -50,10 +50,12 @@ const executeTransferTool = new DynamicStructuredTool({
       required: ["token", "amount", "recipientAddress"],
     },
     func: async ({ token, amount, recipientAddress }: { token: string, amount: string, recipientAddress: string }) => {
+      console.log("tool called");
+      
       console.log(`[Tool Call: executeSendTransaction] Sending ${amount} ${token} to ${recipientAddress}...`);
       await new Promise(resolve => setTimeout(resolve, 1000));
       return `Send successful! ${amount} ${token} sent to ${recipientAddress}. Transaction ID: MOCK_TX_ID_${Date.now()}`;
     },
   });
 
-  export const transferTools: DynamicStructuredTool[] = [ prepareTransferTool,executeTransferTool];
+  export const Tools: DynamicStructuredTool[] = [ prepareTransferTool,executeTransferTool];

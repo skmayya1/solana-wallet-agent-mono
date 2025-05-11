@@ -3,11 +3,13 @@ import http from 'http';
 import ApiRouter from './routes';
 import cors from 'cors'
 import { SocketService } from './socket';
+import { Listners } from './agent/listeners';
 
 const app = express();
 const server = http.createServer(app); 
 export const socketService = new SocketService(server);
 
+ Listners()
 
 const PORT = process.env.PORT || 5000;
 
