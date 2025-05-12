@@ -2,7 +2,7 @@ import Redis from "ioredis";
 import { handleError } from "../utils/error-handler";
 import { socketService } from "../../index";
 import redis from "../../redis";
-import { agentBuilder } from "..";
+import { agentBuilder } from "../index";
 
 const sub = new Redis();
 
