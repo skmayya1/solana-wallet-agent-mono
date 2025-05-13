@@ -2,12 +2,16 @@
 import React from 'react'
 import Chat from '../components/Chat'
 import { ChatProvider } from '../contexts/AgentContext'
+import { SolanaProvider } from '../contexts/WalletContext'
+import Navbar from '../components/Navbar'
 
 const page = () => {
   return (
-    <ChatProvider>
-      <Chat />
-    </ChatProvider>
+    <SolanaProvider>
+      <ChatProvider>
+          <Chat />
+      </ChatProvider>
+    </SolanaProvider>
   )
 }
 

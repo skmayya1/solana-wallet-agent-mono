@@ -24,7 +24,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
-    const socket = io("http://localhost:5000");
+    const socket = io("http://localhost:4000");
 
     socketRef.current = socket;
     socket.on("connect", () => {

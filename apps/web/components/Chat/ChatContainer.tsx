@@ -5,7 +5,7 @@ import { useAgent } from '../../contexts/AgentContext'
 const ChatContainer = () => {
     const { messages } = useAgent()
     return (
-        <div className='max-h-[90%] w-full flex flex-col items-center overflow-y-auto p-4 rounded-lg '>
+        <div className='max-h-[90%] w-full flex  flex-col items-center overflow-y-auto p-4 rounded-lg '>
             {
                 messages.map((item, index) => (
                     <ChatDrop 
